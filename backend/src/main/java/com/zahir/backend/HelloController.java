@@ -6,6 +6,11 @@ import org.springframework.web.bind.annotation.*;
 @CrossOrigin(origins = "*")
 public class HelloController {
 
+    @GetMapping("/")
+    public String root() {
+        return "Backend is running";
+    }
+
     @GetMapping("/hello")
     public String hello() {
         return "Hello World";

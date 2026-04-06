@@ -1,13 +1,9 @@
 import { Component, OnInit } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { CommonModule } from '@angular/common';
-
-const API_URL = (window as any).__env?.apiUrl || '';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule],
   template: `
     <div class="container">
       <header>
@@ -18,11 +14,15 @@ const API_URL = (window as any).__env?.apiUrl || '';
         <div class="card">
           <h2>Backend Response</h2>
           <div class="response">
-            <span *ngIf="loading">Connecting to API...</span>
-            <span *ngIf="!loading && !error" class="message">{{ message }}</span>
-            <span *ngIf="error" class="err">{{ error }}</span>
+            @if (loading) {
+              <span>Connecting to API...</span>
+            } @else if (error) {
+              <span class="err">{{ error }}</span>
+            } @else {
+              <span class="message">{{ message }}</span>
+            }
           </div>
-          <div class="endpoint">GET /hello</div>
+          <div class="endpoint">GET /api/hello</div>
         </div>
         <div class="card">
           <h2>Stack</h2>
@@ -65,9 +65,9 @@ export class AppComponent implements OnInit {
   constructor(private http: HttpClient) {}
 
   ngOnInit() {
-    this.http.get(`${API_URL}/hello`, { responseType: 'text' }).subscribe({
+    this.http.get('/api/hello', { responseType: 'text' }).subscribe({
       next: (resp) => { this.message = resp; this.loading = false; },
-      error: (err) => { this.error = 'Backend unreachable'; this.loading = false; }
+      error: () => { this.error = 'Backend unreachable'; this.loading = false; }
     });
   }
 }
