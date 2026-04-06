@@ -12,6 +12,7 @@ A fully automated DevOps deployment: Node.js API + React frontend on AWS ECS Far
 | **Backend API** | http://zahir-alb-592987015.us-east-1.elb.amazonaws.com:8080 |
 | **Health Check** | http://zahir-alb-592987015.us-east-1.elb.amazonaws.com:8080/health |
 | **API Info** | http://zahir-alb-592987015.us-east-1.elb.amazonaws.com:8080/api/info |
+| **OpenSearch Dashboards** | https://search-zahir-logs-vc2kg6vl2mip7zr5aaozpiquzm.us-east-1.es.amazonaws.com/_dashboards |
 | **GitHub Repo** | https://github.com/ZAZA-del/zahir-devops |
 
 ---
