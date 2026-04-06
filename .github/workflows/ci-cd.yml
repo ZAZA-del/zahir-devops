@@ -141,12 +141,14 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           kubectl apply -f k8s/namespace.yaml
-          # Update image tags in manifests
-          sed -i "s|zahir-backend:latest|$ECR_REGISTRY/$ECR_BACKEND:$IMAGE_TAG|g" k8s/backend/deployment.yaml
-          sed -i "s|zahir-frontend:latest|$ECR_REGISTRY/$ECR_FRONTEND:$IMAGE_TAG|g" k8s/frontend/deployment.yaml
           kubectl apply -f k8s/backend/deployment.yaml
           kubectl apply -f k8s/frontend/deployment.yaml
           kubectl apply -f k8s/logging/
+          # Update running images to the new SHA tag
+          kubectl set image deployment/zahir-backend \
+            zahir-backend=$ECR_REGISTRY/$ECR_BACKEND:$IMAGE_TAG -n zahir
+          kubectl set image deployment/zahir-frontend \
+            zahir-frontend=$ECR_REGISTRY/$ECR_FRONTEND:$IMAGE_TAG -n zahir
           kubectl rollout status deployment/zahir-backend -n zahir --timeout=180s
           kubectl rollout status deployment/zahir-frontend -n zahir --timeout=180s
 
