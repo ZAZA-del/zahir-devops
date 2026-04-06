@@ -5,12 +5,11 @@ services:
     build:
       context: ./backend
     ports:
-      - "3001:3001"
+      - "8080:8080"
     environment:
-      - NODE_ENV=development
-      - PORT=3001
+      - SPRING_PROFILES_ACTIVE=dev
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -20,43 +19,40 @@ services:
   frontend:
     build:
       context: ./frontend
-      args:
-        VITE_API_URL: http://localhost:3001
     ports:
-      - "3000:80"
+      - "80:80"
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     networks:
       - zahir-net
 
-  opensearch:
-    image: opensearchproject/opensearch:2.11.0
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
     environment:
       - discovery.type=single-node
-      - DISABLE_SECURITY_PLUGIN=true
-      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
     ports:
       - "9200:9200"
     volumes:
-      - opensearch-data:/usr/share/opensearch/data
+      - es-data:/usr/share/elasticsearch/data
     networks:
       - zahir-net
 
-  opensearch-dashboards:
-    image: opensearchproject/opensearch-dashboards:2.11.0
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.13.0
     ports:
       - "5601:5601"
     environment:
-      - OPENSEARCH_HOSTS=http://opensearch:9200
-      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - xpack.security.enabled=false
     depends_on:
-      - opensearch
+      - elasticsearch
     networks:
       - zahir-net
 
 volumes:
-  opensearch-data:
+  es-data:
 
 networks:
   zahir-net:

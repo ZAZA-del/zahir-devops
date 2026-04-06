@@ -4,3 +4,15 @@ dist/
 *.log
 .DS_Store
 coverage/
+# Java
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# Angular
+frontend/dist/
+frontend/.angular/
+
+# k8s secrets
+*.kubeconfig
