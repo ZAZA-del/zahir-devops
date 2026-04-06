@@ -1,0 +1,19 @@
+=== Backend /hello ===
+Hello World
+
+=== Backend /health ===
+{"status":"UP"}
+
+=== Backend /api/info ===
+{
+    "project": "Zahir DevOps",
+    "stack": {
+        "backend": "Java Spring Boot",
+        "frontend": "Angular",
+        "k8s": "EKS",
+        "logging": "Elasticsearch + Kibana"
+    }
+}
+
+=== Backend URL ===
+http://a7d1837a5e5b64a2a8b1af2c8061f58c-1613418956.us-east-1.elb.amazonaws.com

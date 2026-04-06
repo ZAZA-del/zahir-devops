@@ -1,0 +1,27 @@
+NAME                                  READY   STATUS    RESTARTS   AGE     IP               NODE                           NOMINATED NODE   READINESS GATES
+pod/elasticsearch-69f5b95778-79nj9    1/1     Running   0          4m14s   192.168.7.247    ip-192-168-4-7.ec2.internal    <none>           <none>
+pod/filebeat-bnbph                    1/1     Running   0          4m9s    192.168.37.204   ip-192-168-55-7.ec2.internal   <none>           <none>
+pod/filebeat-gmhlv                    1/1     Running   0          4m9s    192.168.30.241   ip-192-168-4-7.ec2.internal    <none>           <none>
+pod/kibana-6ddc57db7b-7kjqs           1/1     Running   0          4m12s   192.168.50.144   ip-192-168-55-7.ec2.internal   <none>           <none>
+pod/zahir-backend-6fc7cc444-5mhgw     1/1     Running   0          4m17s   192.168.40.6     ip-192-168-55-7.ec2.internal   <none>           <none>
+pod/zahir-backend-6fc7cc444-64b87     1/1     Running   0          4m17s   192.168.0.236    ip-192-168-4-7.ec2.internal    <none>           <none>
+pod/zahir-frontend-75f874dcf6-7wjdx   1/1     Running   0          4m15s   192.168.35.113   ip-192-168-55-7.ec2.internal   <none>           <none>
+pod/zahir-frontend-75f874dcf6-hq26l   1/1     Running   0          4m15s   192.168.11.143   ip-192-168-4-7.ec2.internal    <none>           <none>
+
+NAME                         TYPE           CLUSTER-IP       EXTERNAL-IP                                                               PORT(S)             AGE     SELECTOR
+service/elasticsearch-svc    ClusterIP      10.100.123.23    <none>                                                                    9200/TCP,9300/TCP   4m13s   app=elasticsearch
+service/kibana-svc           LoadBalancer   10.100.165.85    a559a8fcbad304edba1b6a467118b587-708286872.us-east-1.elb.amazonaws.com    5601:32483/TCP      4m12s   app=kibana
+service/zahir-backend-svc    LoadBalancer   10.100.225.182   a7d1837a5e5b64a2a8b1af2c8061f58c-1613418956.us-east-1.elb.amazonaws.com   80:32276/TCP        4m16s   app=zahir-backend
+service/zahir-frontend-svc   LoadBalancer   10.100.140.168   a6399fc5dbe4b477f95cba91561a8ee4-486874822.us-east-1.elb.amazonaws.com    80:30798/TCP        4m15s   app=zahir-frontend
+
+NAME                             READY   UP-TO-DATE   AVAILABLE   AGE     CONTAINERS       IMAGES                                                               SELECTOR
+deployment.apps/elasticsearch    1/1     1            1           4m14s   elasticsearch    docker.elastic.co/elasticsearch/elasticsearch:8.13.0                 app=elasticsearch
+deployment.apps/kibana           1/1     1            1           4m12s   kibana           docker.elastic.co/kibana/kibana:8.13.0                               app=kibana
+deployment.apps/zahir-backend    2/2     2            2           4m17s   zahir-backend    143575007958.dkr.ecr.us-east-1.amazonaws.com/zahir-backend:latest    app=zahir-backend
+deployment.apps/zahir-frontend   2/2     2            2           4m15s   zahir-frontend   143575007958.dkr.ecr.us-east-1.amazonaws.com/zahir-frontend:latest   app=zahir-frontend
+
+NAME                      DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE     CONTAINERS   IMAGES                                    SELECTOR
+daemonset.apps/filebeat   2         2         2       2            2           <none>          4m10s   filebeat     docker.elastic.co/beats/filebeat:8.13.0   app=filebeat
+NAME                           STATUS   ROLES    AGE     VERSION                INTERNAL-IP    EXTERNAL-IP     OS-IMAGE                        KERNEL-VERSION                    CONTAINER-RUNTIME
+ip-192-168-4-7.ec2.internal    Ready    <none>   4m55s   v1.30.14-eks-f69f56f   192.168.4.7    44.204.177.59   Amazon Linux 2023.10.20260302   6.1.163-186.299.amzn2023.x86_64   containerd://2.2.1+unknown
+ip-192-168-55-7.ec2.internal   Ready    <none>   4m58s   v1.30.14-eks-f69f56f   192.168.55.7   98.93.54.208    Amazon Linux 2023.10.20260302   6.1.163-186.299.amzn2023.x86_64   containerd://2.2.1+unknown

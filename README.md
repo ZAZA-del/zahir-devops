@@ -1,6 +1,7 @@
-# Zahir DevOps — Production-Ready Cloud Project
+# Zahir DevOps — Academic Compliant Cloud Project
 
-A fully automated DevOps deployment: Node.js API + React frontend on AWS ECS Fargate with CI/CD and OpenSearch logging.
+Full-stack cloud-native deployment meeting academic requirements:
+**Java Spring Boot + Angular + Kubernetes (EKS) + Elasticsearch + Kibana + GitHub Actions CI/CD**
 
 ---
 
@@ -8,105 +9,164 @@ A fully automated DevOps deployment: Node.js API + React frontend on AWS ECS Far
 
 | Service | URL |
 |---------|-----|
-| **Frontend** | http://zahir-alb-592987015.us-east-1.elb.amazonaws.com |
-| **Backend API** | http://zahir-alb-592987015.us-east-1.elb.amazonaws.com:8080 |
-| **Health Check** | http://zahir-alb-592987015.us-east-1.elb.amazonaws.com:8080/health |
-| **API Info** | http://zahir-alb-592987015.us-east-1.elb.amazonaws.com:8080/api/info |
-| **OpenSearch Dashboards** | https://search-zahir-logs-vc2kg6vl2mip7zr5aaozpiquzm.us-east-1.es.amazonaws.com/_dashboards |
-| **GitHub Repo** | https://github.com/ZAZA-del/zahir-devops |
+| **Frontend (Angular)** | http://a6399fc5dbe4b477f95cba91561a8ee4-486874822.us-east-1.elb.amazonaws.com |
+| **Backend API (Spring Boot)** | http://a7d1837a5e5b64a2a8b1af2c8061f58c-1613418956.us-east-1.elb.amazonaws.com |
+| **Backend /hello** | http://a7d1837a5e5b64a2a8b1af2c8061f58c-1613418956.us-east-1.elb.amazonaws.com/hello |
+| **Kibana** | http://a559a8fcbad304edba1b6a467118b587-708286872.us-east-1.elb.amazonaws.com:5601 |
+| **GitHub Repository** | https://github.com/ZAZA-del/zahir-devops |
 
 ---
 
 ## Architecture
 
 ```
-                         ┌─────────────────────────────────────────┐
-                         │              AWS us-east-1               │
-                         │                                          │
-Internet ──► ALB ──────► │  ┌──────────────┐  ┌─────────────────┐ │
-             port 80     │  │ ECS Frontend │  │  ECS Backend    │ │
-             port 8080   │  │ React+Vite   │  │ Node.js/Express │ │
-                         │  │ nginx:alpine  │  │  node:22-alpine │ │
-                         │  └──────────────┘  └────────┬────────┘ │
-                         │                             │           │
-                         │  ECR (zahir-backend)        │           │
-                         │  ECR (zahir-frontend)       ▼           │
-                         │                    CloudWatch Logs       │
-                         │                         │                │
-                         │                         ▼                │
-                         │                  Lambda (shipper)        │
-                         │                         │                │
-                         │                         ▼                │
-                         │                    OpenSearch            │
-                         │                    (zahir-logs)          │
-                         └─────────────────────────────────────────┘
+                        GitHub Actions CI/CD
+                        ┌───────────────────────────────────┐
+                        │ 1. mvn build + ng build            │
+                        │ 2. docker buildx push → ECR        │
+                        │ 3. kubectl apply → EKS             │
+                        └──────────────┬────────────────────┘
+                                       │
+                ┌──────────────────────▼─────────────────────────┐
+                │              AWS us-east-1                       │
+                │                                                  │
+                │  ┌────────────┐     ┌────────────────────────┐  │
+Internet ──────►│  │ AWS ELB    │────►│   EKS Cluster          │  │
+                │  │(3 LBs)     │     │   (Kubernetes 1.30)    │  │
+                │  └────────────┘     │                        │  │
+                │                     │  Namespace: zahir       │  │
+                │                     │                        │  │
+                │                     │  ┌──────────────────┐  │  │
+                │                     │  │ zahir-backend     │  │  │
+                │                     │  │ Spring Boot 3.5   │  │  │
+                │                     │  │ 2 replicas        │  │  │
+                │                     │  └──────────────────┘  │  │
+                │                     │                        │  │
+                │                     │  ┌──────────────────┐  │  │
+                │                     │  │ zahir-frontend    │  │  │
+                │                     │  │ Angular 21+nginx  │  │  │
+                │                     │  │ 2 replicas        │  │  │
+                │                     │  └──────────────────┘  │  │
+                │                     │                        │  │
+                │                     │  ┌──────────────────┐  │  │
+                │                     │  │ elasticsearch     │  │  │
+                │                     │  │ v8.13.0          │  │  │
+                │                     │  └──────────────────┘  │  │
+                │                     │                        │  │
+                │                     │  ┌──────────────────┐  │  │
+                │                     │  │ kibana            │  │  │
+                │                     │  │ v8.13.0          │  │  │
+                │                     │  └──────────────────┘  │  │
+                │                     │                        │  │
+                │                     │  ┌──────────────────┐  │  │
+                │                     │  │ filebeat          │  │  │
+                │  ECR                │  │ DaemonSet (2)     │  │  │
+                │  zahir-backend      │  │ → Elasticsearch  │  │  │
+                │  zahir-frontend     │  └──────────────────┘  │  │
+                │                     └────────────────────────┘  │
+                └──────────────────────────────────────────────────┘
 ```
-
-### Components
-
-| Component | Technology | Details |
-|-----------|-----------|---------|
-| Backend | Node.js 22 + Express | REST API on port 3001 |
-| Frontend | React 18 + Vite | Served via nginx |
-| Container Registry | AWS ECR | `zahir-backend`, `zahir-frontend` |
-| Compute | AWS ECS Fargate | 256 CPU / 512MB per service |
-| Load Balancer | AWS ALB | Port 80 (frontend), 8080 (backend) |
-| Logs | CloudWatch → Lambda → OpenSearch | Domain: `zahir-logs` |
-| CI/CD | GitHub Actions | test → build → push ECR → deploy ECS |
 
 ---
 
-## API Endpoints
+## Tech Stack
+
+| Requirement | Implementation |
+|-------------|---------------|
+| Backend | Java Spring Boot 3.5 (Java 21) |
+| Frontend | Angular 21 |
+| Kubernetes | AWS EKS 1.30 (Fargate removed) |
+| Logging | Elasticsearch 8.13 + Kibana 8.13 |
+| Log shipping | Filebeat DaemonSet |
+| Container Registry | AWS ECR |
+| CI/CD | GitHub Actions |
+
+---
+
+## Backend API
+
+Spring Boot app with these endpoints:
 
 ```
-GET /health      → Service health status
-GET /api         → API welcome + endpoint list
-GET /api/info    → Stack info, uptime, memory usage
+GET /hello       → "Hello World"
+GET /health      → {"status":"UP"}
+GET /api/info    → JSON stack info
+GET /actuator/*  → Spring Actuator endpoints
 ```
 
 ---
 
-## Local Development
+## How to Run Locally
 
 ### Prerequisites
 - Docker & Docker Compose
-- Node.js 22+
+- Java 21 + Maven
+- Node.js 22 + Angular CLI
 
-### Run Locally
+### Local Development
 
 ```bash
 git clone https://github.com/ZAZA-del/zahir-devops.git
 cd zahir-devops
 
-# Start all services
+# Start everything (Spring Boot + Angular + Elasticsearch + Kibana)
 docker-compose up --build
 
 # Services:
-# Frontend:           http://localhost:3000
-# Backend API:        http://localhost:3001
-# OpenSearch:         http://localhost:9200
-# OpenSearch Dashboards: http://localhost:5601
+# Backend:       http://localhost:8080
+# Frontend:      http://localhost:80
+# Elasticsearch: http://localhost:9200
+# Kibana:        http://localhost:5601
 ```
 
-### Run Without Docker
+### Run without Docker
 
 ```bash
 # Backend
 cd backend
-npm install
-npm run dev     # http://localhost:3001
+./mvnw spring-boot:run
+# → http://localhost:8080
 
-# Frontend (separate terminal)
+# Frontend
 cd frontend
 npm install
-npm run dev     # http://localhost:3000
+ng serve
+# → http://localhost:4200
 ```
 
-### Run Tests
+---
+
+## Kubernetes Deployment
+
+### Structure
+
+```
+k8s/
+├── namespace.yaml              # zahir namespace
+├── backend/
+│   └── deployment.yaml         # Deployment (2 replicas) + LoadBalancer Service
+├── frontend/
+│   └── deployment.yaml         # Deployment (2 replicas) + LoadBalancer Service
+└── logging/
+    ├── elasticsearch.yaml       # Deployment + ClusterIP Service
+    ├── kibana.yaml              # Deployment + LoadBalancer Service
+    └── filebeat.yaml            # DaemonSet + ConfigMap + RBAC
+```
+
+### Manual Deploy
 
 ```bash
-cd backend
-npm test
+# Configure kubectl
+aws eks update-kubeconfig --region us-east-1 --name zahir-cluster
+
+# Deploy
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/backend/
+kubectl apply -f k8s/frontend/
+kubectl apply -f k8s/logging/
+
+# Check status
+kubectl get all -n zahir
 ```
 
 ---
@@ -116,73 +176,53 @@ npm test
 On every push to `main`:
 
 ```
-┌─────────┐    ┌──────────────────┐    ┌──────────────────────┐
-│  Push   │───►│  1. Test         │───►│  2. Build & Push ECR │
-│ to main │    │  npm test        │    │  docker buildx       │
-└─────────┘    │  (jest coverage) │    │  linux/amd64         │
-               └──────────────────┘    └──────────┬───────────┘
-                                                   │
-                                                   ▼
-                                       ┌──────────────────────┐
-                                       │  3. Deploy ECS       │
-                                       │  force-new-deploy    │
-                                       │  wait services-stable│
-                                       └──────────────────────┘
+Test Backend      →  mvn verify (JUnit)
+Test Frontend     →  ng build --configuration production
+        ↓
+Build & Push      →  docker buildx --platform linux/amd64
+                     push zahir-backend:sha, zahir-frontend:sha to ECR
+        ↓
+Deploy to EKS     →  aws eks update-kubeconfig
+                     kubectl apply -f k8s/
+                     kubectl rollout status
 ```
-
-GitHub Actions secrets required:
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
-- `AWS_ACCOUNT_ID`
 
 ---
 
-## Logging
+## Logging Architecture
 
-Application logs flow:
-1. Containers write to **CloudWatch Logs** (`/zahir/backend`, `/zahir/frontend`)
-2. CloudWatch subscription triggers **Lambda** (`zahir-log-shipper`)
-3. Lambda ships to **OpenSearch** domain (`zahir-logs`)
-4. Visualize in **OpenSearch Dashboards**
+```
+Application pods
+    ↓
+Container stdout/stderr
+    ↓
+Filebeat DaemonSet (reads /var/log/containers)
+    ↓
+Elasticsearch (index: zahir-logs-YYYY.MM.DD)
+    ↓
+Kibana (visualization + dashboards)
+```
 
-CloudWatch Logs: [AWS Console](https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#logsV2:log-groups/log-group/$252Fzahir$252Fbackend)
+Access Kibana at: http://a559a8fcbad304edba1b6a467118b587-708286872.us-east-1.elb.amazonaws.com:5601
 
 ---
 
 ## Infrastructure
 
-| Resource | Name | Region |
-|----------|------|--------|
-| ECS Cluster | `zahir-cluster` | us-east-1 |
-| ECR Backend | `zahir-backend` | us-east-1 |
-| ECR Frontend | `zahir-frontend` | us-east-1 |
-| ALB | `zahir-alb` | us-east-1 |
-| OpenSearch | `zahir-logs` | us-east-1 |
-| Log Group Backend | `/zahir/backend` | us-east-1 |
-| Log Group Frontend | `/zahir/frontend` | us-east-1 |
+| Resource | Name | Details |
+|----------|------|---------|
+| EKS Cluster | `zahir-cluster` | us-east-1, k8s 1.30 |
+| Node Group | `zahir-nodes` | 2× t3.medium |
+| ECR Backend | `zahir-backend` | Spring Boot image |
+| ECR Frontend | `zahir-frontend` | Angular/nginx image |
+| k8s Namespace | `zahir` | All workloads |
 
 ---
 
-## Project Structure
+## Deliverables
 
-```
-zahir-devops/
-├── backend/
-│   ├── src/
-│   │   ├── index.js          # Express app
-│   │   └── index.test.js     # Jest tests
-│   ├── Dockerfile            # node:22-alpine multi-stage
-│   └── package.json
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx           # React dashboard
-│   │   └── main.jsx
-│   ├── Dockerfile            # vite build + nginx
-│   ├── nginx.conf
-│   └── package.json
-├── .github/
-│   └── workflows/
-│       └── ci-cd.yml         # Full CI/CD pipeline
-├── docker-compose.yml        # Local dev with OpenSearch
-└── README.md
-```
+See [`/deliverables/`](./deliverables/) for:
+- `screenshots/k8s-pods-services.txt` — kubectl output of all pods/services
+- `screenshots/backend-endpoint.txt` — backend API responses
+- `screenshots/frontend-status.txt` — frontend HTTP status
+- `screenshots/kibana-status.txt` — Kibana status and log count

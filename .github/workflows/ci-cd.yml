@@ -120,6 +120,15 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Wait for EKS cluster to be ACTIVE
+        run: |
+          for i in $(seq 1 10); do
+            STATUS=$(aws eks describe-cluster --name $EKS_CLUSTER --region $AWS_REGION --query 'cluster.status' --output text)
+            echo "Cluster status: $STATUS"
+            [ "$STATUS" = "ACTIVE" ] && break
+            sleep 30
+          done
+
       - name: Update kubeconfig
         run: |
           aws eks update-kubeconfig \

@@ -1,0 +1,8 @@
+=== Kibana API Status ===
+Status: available
+
+=== Elasticsearch Log Count ===
+{"count":1268,"_shards":{"total":1,"successful":1,"skipped":0,"failed":0}}
+
+=== Kibana URL ===
+http://a559a8fcbad304edba1b6a467118b587-708286872.us-east-1.elb.amazonaws.com:5601

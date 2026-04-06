@@ -1,0 +1,9 @@
+=== Frontend HTTP Status ===
+HTTP/1.1 200 OK
+Server: nginx/1.29.7
+Date: Mon, 06 Apr 2026 22:59:45 GMT
+Content-Type: text/html
+Content-Length: 403
+
+=== Frontend URL ===
+http://a6399fc5dbe4b477f95cba91561a8ee4-486874822.us-east-1.elb.amazonaws.com
