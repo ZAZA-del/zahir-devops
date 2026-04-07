@@ -215,6 +215,11 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
       - name: Wait for EKS cluster to be ACTIVE
         run: |
           for i in $(seq 1 10); do
@@ -245,6 +250,22 @@ jobs:
             zahir-frontend=$ECR_REGISTRY/$ECR_FRONTEND:$IMAGE_TAG -n zahir
           kubectl rollout status deployment/zahir-backend -n zahir --timeout=180s
           kubectl rollout status deployment/zahir-frontend -n zahir --timeout=180s
+
+      - name: Update Lambda backend URL
+        # After a destroy→rebuild, the backend ELB hostname changes.
+        # Read the new hostname and re-apply Terraform to update Lambda env.
+        run: |
+          BACKEND_HOSTNAME=$(kubectl get svc zahir-backend-svc -n zahir \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+          if [ -n "$BACKEND_HOSTNAME" ]; then
+            echo "Backend LB: $BACKEND_HOSTNAME — updating Lambda BACKEND_URL..."
+            cd ${{ env.TF_DIR }}
+            terraform init -input=false -reconfigure
+            terraform apply -auto-approve -input=false \
+              -var="backend_lb_url=http://${BACKEND_HOSTNAME}"
+          else
+            echo "No backend LB found — skipping Lambda URL update."
+          fi
 
       - name: Print endpoints
         run: |
