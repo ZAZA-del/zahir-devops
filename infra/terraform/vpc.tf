@@ -177,3 +177,62 @@ resource "aws_route_table_association" "private_1f" {
   subnet_id      = aws_subnet.private_1f.id
   route_table_id = aws_route_table.private_1f.id
 }
+
+# ---------------------------------------------------------------------------
+# Security Groups
+#
+# These two were created by eksctl. They are managed here so that
+# terraform destroy can remove them (and unblock VPC deletion).
+# On fresh apply they are recreated; EKS managed nodes attach to the
+# cluster SG automatically without needing these extras.
+#
+# Import commands:
+#   terraform import aws_security_group.control_plane  sg-01b01cb39bb0d723e
+#   terraform import aws_security_group.cluster_shared sg-0eb7d102167cdef5c
+# ---------------------------------------------------------------------------
+
+# Control-plane ↔ worker communication SG (attached to EKS cluster).
+resource "aws_security_group" "control_plane" {
+  name        = "eksctl-zahir-cluster-cluster-ControlPlaneSecurityGroup-mUBZ8SBcDWBD"
+  description = "Communication between the control plane and worker nodegroups"
+  vpc_id      = aws_vpc.main.id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # ingress rules are managed externally (EKS / eksctl); ignore to avoid diffs
+  lifecycle {
+    ignore_changes = [tags, tags_all, ingress]
+  }
+}
+
+# Shared node ↔ node communication SG (attached to node ENIs via launch template).
+resource "aws_security_group" "cluster_shared" {
+  name        = "eksctl-zahir-cluster-cluster-ClusterSharedNodeSecurityGroup-kZYo5xkp0u4Y"
+  description = "Communication between all nodes in the cluster"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port = 0
+    to_port   = 0
+    protocol  = "-1"
+    self      = true
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # The additional ingress from the EKS cluster SG is added by EKS automatically;
+  # ignore_changes prevents spurious diffs when cluster SG ID changes across rebuilds.
+  lifecycle {
+    ignore_changes = [tags, tags_all, ingress]
+  }
+}

@@ -3,19 +3,17 @@ name: Terraform Destroy
 # ─────────────────────────────────────────────────────────────────────────────
 # MANUAL ONLY — never triggered automatically.
 #
-# Trigger from GitHub UI:
-#   Actions → Terraform Destroy → Run workflow → type DESTROY → Run
-#
 # Trigger from GitHub CLI:
 #   gh workflow run terraform-destroy.yml \
+#     --repo ZAZA-del/zahir-devops \
 #     -f confirm=DESTROY
 #
 # This destroys ALL Terraform-managed infrastructure:
-#   EKS cluster, node group, IAM roles, ECR repos (including images),
-#   Lambda, API Gateway.
+#   VPC, EKS cluster + nodes, IAM roles, ECR repos (images deleted),
+#   Lambda, API Gateway, security groups, NAT/IGW.
 #
-# WARNING: This is irreversible. The Kubernetes workloads, ECR images,
-# and cluster will be permanently deleted.
+# WARNING: Irreversible. All cluster workloads, ECR images, and
+# infrastructure will be permanently deleted.
 # ─────────────────────────────────────────────────────────────────────────────
 on:
   workflow_dispatch:
@@ -28,12 +26,13 @@ on:
 env:
   AWS_REGION: us-east-1
   TF_DIR: infra/terraform
+  CLUSTER_NAME: zahir-cluster
+  K8S_NAMESPACE: zahir
 
 jobs:
   destroy:
     name: Terraform Destroy
     runs-on: ubuntu-latest
-    # Guard: abort unless user explicitly typed DESTROY
     if: github.event.inputs.confirm == 'DESTROY'
 
     steps:
@@ -41,9 +40,8 @@ jobs:
 
       - name: Confirm destruction
         run: |
-          echo "⚠️  DESTROY confirmed. Proceeding with terraform destroy."
+          echo "DESTROY confirmed. Proceeding."
           echo "Triggered by: ${{ github.actor }}"
-          echo "Ref: ${{ github.ref }}"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -52,6 +50,56 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # ── Step 1: Drain Kubernetes LoadBalancer services ──────────────────────
+      # The k8s cloud-controller-manager creates AWS security groups and ELBs
+      # for LoadBalancer services. These are NOT in Terraform state, so
+      # terraform destroy won't remove them — leaving them in the VPC blocks
+      # VPC deletion. Deleting the namespace first lets the cloud-controller
+      # clean them up properly.
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: "latest"
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.CLUSTER_NAME }}
+
+      - name: Delete Kubernetes namespace (removes LoadBalancer services + ELBs)
+        run: |
+          kubectl delete namespace ${{ env.K8S_NAMESPACE }} --ignore-not-found --wait=true --timeout=120s || true
+          echo "Namespace deleted (or was already gone)."
+
+      - name: Wait for AWS to clean up ELB security groups
+        run: |
+          echo "Waiting for ELB-managed security groups to be removed by AWS..."
+          VPC_ID=$(aws eks describe-cluster \
+            --name ${{ env.CLUSTER_NAME }} \
+            --query 'cluster.resourcesVpcConfig.vpcId' \
+            --output text 2>/dev/null || echo "")
+
+          if [ -z "$VPC_ID" ]; then
+            echo "Cluster not found — skipping SG wait."
+          else
+            # Poll until no k8s-elb SGs remain (max 3 minutes)
+            for i in $(seq 1 18); do
+              ELB_SGS=$(aws ec2 describe-security-groups \
+                --filters "Name=vpc-id,Values=${VPC_ID}" \
+                          "Name=group-name,Values=k8s-elb-*" \
+                --query 'SecurityGroups[].GroupId' \
+                --output text)
+              if [ -z "$ELB_SGS" ]; then
+                echo "All ELB security groups cleaned up."
+                break
+              fi
+              echo "Still waiting for: ${ELB_SGS} (attempt ${i}/18)..."
+              sleep 10
+            done
+          fi
+
+      # ── Step 2: Terraform destroy ────────────────────────────────────────────
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -68,5 +116,6 @@ jobs:
       - name: Post-destroy summary
         if: always()
         run: |
-          echo "Destroy complete. All Terraform-managed resources have been removed."
-          echo "To rebuild: push to main branch — terraform apply runs automatically."
+          echo "Destroy complete. All infrastructure removed."
+          echo "To rebuild: push to main — terraform apply runs automatically."
+          echo "Then redeploy workloads: kubectl apply -f k8s/"

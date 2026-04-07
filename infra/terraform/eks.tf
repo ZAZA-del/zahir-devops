@@ -18,12 +18,14 @@ resource "aws_eks_cluster" "main" {
       aws_subnet.private_1b.id,
       aws_subnet.private_1f.id,
     ]
-    # cluster_security_group_id is read-only — EKS manages it automatically
+    # Attach the eksctl control-plane SG so EKS can reach worker nodes.
+    # cluster_security_group_id is read-only — EKS manages it automatically.
+    security_group_ids = [aws_security_group.control_plane.id]
   }
 
   # eksctl adds its own tags; ignore them to prevent spurious diffs
   lifecycle {
-    ignore_changes = [tags, tags_all, vpc_config[0].security_group_ids]
+    ignore_changes = [tags, tags_all]
   }
 
   depends_on = [
