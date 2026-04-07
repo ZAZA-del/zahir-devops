@@ -8,6 +8,9 @@ resource "aws_eks_cluster" "main" {
   role_arn = aws_iam_role.eks_cluster.arn
   version  = var.k8s_version
 
+  # eksctl sets this to false; must match to avoid forced cluster replacement
+  bootstrap_self_managed_addons = false
+
   vpc_config {
     subnet_ids = [
       "subnet-0af9da2aa1bda019d",
@@ -15,8 +18,7 @@ resource "aws_eks_cluster" "main" {
       "subnet-04947bfff2536a195",
       "subnet-00e80835781aa3152",
     ]
-    # Cluster security group is auto-managed by EKS — reference only, not created here
-    cluster_security_group_id = "sg-0fe5f2b9498e285cf"
+    # cluster_security_group_id is read-only — EKS manages it automatically
   }
 
   # eksctl adds its own tags; ignore them to prevent spurious diffs
@@ -59,7 +61,13 @@ resource "aws_eks_node_group" "main" {
   }
 
   lifecycle {
-    ignore_changes = [tags, tags_all, scaling_config[0].desired_size]
+    ignore_changes = [
+      tags, tags_all,
+      scaling_config[0].desired_size,
+      # eksctl manages node labels and launch_template — don't touch them
+      labels,
+      launch_template,
+    ]
   }
 
   depends_on = [
