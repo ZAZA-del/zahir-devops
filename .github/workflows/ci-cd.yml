@@ -251,23 +251,38 @@ jobs:
           kubectl rollout status deployment/zahir-backend -n zahir --timeout=180s
           kubectl rollout status deployment/zahir-frontend -n zahir --timeout=180s
 
-      - name: Update Lambda backend URL
-        # After a destroy→rebuild, the backend ELB hostname changes.
-        # Read the new hostname and re-apply Terraform to update Lambda env.
+      - name: Update Terraform outputs with live app URLs
+        # After deploy, read the three LoadBalancer hostnames from k8s and
+        # store them in Terraform state via terraform apply -var.
+        # This makes `terraform output` show the live URLs for all three apps.
         run: |
-          BACKEND_HOSTNAME=$(kubectl get svc zahir-backend-svc -n zahir \
+          BACKEND=$(kubectl get svc zahir-backend-svc  -n zahir \
             -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
-          if [ -n "$BACKEND_HOSTNAME" ]; then
-            echo "Backend LB: $BACKEND_HOSTNAME — updating Lambda BACKEND_URL..."
-            cd ${{ env.TF_DIR }}
-            terraform init -input=false -reconfigure
-            terraform apply -auto-approve -input=false \
-              -var="backend_lb_url=http://${BACKEND_HOSTNAME}"
-          else
-            echo "No backend LB found — skipping Lambda URL update."
-          fi
+          FRONTEND=$(kubectl get svc zahir-frontend-svc -n zahir \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+          KIBANA=$(kubectl get svc kibana-svc -n zahir \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
 
-      - name: Print endpoints
+          echo "Backend  : ${BACKEND}"
+          echo "Frontend : ${FRONTEND}"
+          echo "Kibana   : ${KIBANA}"
+
+          cd ${{ env.TF_DIR }}
+          terraform init -input=false -reconfigure
+          terraform apply -auto-approve -input=false \
+            -var="backend_lb_url=${BACKEND}" \
+            -var="frontend_lb_url=${FRONTEND}" \
+            -var="kibana_lb_url=${KIBANA}"
+
+      - name: Print app URLs
         run: |
-          echo "=== Services ==="
-          kubectl get svc -n zahir
+          echo ""
+          echo "============================================"
+          echo " LIVE APP URLs"
+          echo "============================================"
+          cd ${{ env.TF_DIR }}
+          terraform output app_frontend_url
+          terraform output app_backend_url
+          terraform output app_kibana_url
+          terraform output api_gateway_url
+          echo "============================================"

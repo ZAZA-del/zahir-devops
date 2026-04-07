@@ -47,7 +47,19 @@ variable "node_max" {
 }
 
 variable "backend_lb_url" {
-  description = "Backend Spring Boot LoadBalancer URL (used by Lambda)"
+  description = "Backend Spring Boot LoadBalancer hostname (used by Lambda + output)"
   type        = string
-  default     = "http://a7d1837a5e5b64a2a8b1af2c8061f58c-1613418956.us-east-1.elb.amazonaws.com"
+  default     = ""
+}
+
+variable "frontend_lb_url" {
+  description = "Frontend Angular LoadBalancer URL (set by CI after kubectl deploy)"
+  type        = string
+  default     = ""
+}
+
+variable "kibana_lb_url" {
+  description = "Kibana LoadBalancer URL (set by CI after kubectl deploy)"
+  type        = string
+  default     = ""
 }
