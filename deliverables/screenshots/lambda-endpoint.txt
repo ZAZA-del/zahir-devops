@@ -1,0 +1,5 @@
+=== Lambda (serverless) via API Gateway ===
+{"source": "AWS Lambda (serverless)", "backend_response": "Hello World", "message": "Lambda \u2192 Spring Boot: Hello World"}
+
+=== Lambda ARN ===
+arn:aws:lambda:us-east-1:143575007958:function:zahir-hello-proxy	python3.13	Active

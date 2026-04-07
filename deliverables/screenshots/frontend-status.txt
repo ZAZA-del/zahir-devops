@@ -1,9 +1,42 @@
-=== Frontend HTTP Status ===
+=== Frontend HTTP Status + Cache Headers ===
 HTTP/1.1 200 OK
 Server: nginx/1.29.7
-Date: Mon, 06 Apr 2026 22:59:45 GMT
+Date: Tue, 07 Apr 2026 00:01:56 GMT
 Content-Type: text/html
 Content-Length: 403
+Last-Modified: Mon, 06 Apr 2026 23:58:52 GMT
+Connection: keep-alive
+ETag: "69d448bc-193"
+Cache-Control: no-cache, no-store, must-revalidate
+Pragma: no-cache
+Expires: 0
+Accept-Ranges: bytes
 
-=== Frontend URL ===
-http://a6399fc5dbe4b477f95cba91561a8ee4-486874822.us-east-1.elb.amazonaws.com
+
+=== Frontend index.html content ===
+<!doctype html>
+<html lang="en" data-beasties-container>
+<head>
+  <meta charset="utf-8">
+  <title>Zahir DevOps</title>
+  <base href="/">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="styles-5INURTSO.css"></head>
+<body style="background:#0f172a;margin:0">
+  <app-root></app-root>
+<script src="main-KZFTF2P3.js" type="module"></script></body>
+</html>
+
+=== Angular JS bundle (200) ===
+HTTP/1.1 200 OK
+Server: nginx/1.29.7
+Date: Tue, 07 Apr 2026 00:01:56 GMT
+Content-Type: application/javascript
+Content-Length: 126629
+
+=== Frontend /api/hello proxy → backend ===
+Hello World
+=== Missing asset returns 404 (not index.html) ===
+HTTP/1.1 404 Not Found
+Server: nginx/1.29.7
+Date: Tue, 07 Apr 2026 00:01:57 GMT

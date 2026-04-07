@@ -1,8 +1,14 @@
-=== Kibana API Status ===
-Status: available
+=== Kibana Status ===
+    "name": "kibana-6ddc57db7b-7kjqs",
+    "status": {
+            "level": "available",
+                "level": "available",
+                "level": "available",
+                "level": "available",
+                "level": "available",
+                "level": "available",
+                "level": "available",
+                "level": "available",
 
-=== Elasticsearch Log Count ===
-{"count":1268,"_shards":{"total":1,"successful":1,"skipped":0,"failed":0}}
-
-=== Kibana URL ===
-http://a559a8fcbad304edba1b6a467118b587-708286872.us-east-1.elb.amazonaws.com:5601
+=== Elasticsearch log count ===
+{"statusCode":404,"error":"Not Found","message":"Not Found"}

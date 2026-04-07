@@ -1,7 +1,7 @@
 # Zahir DevOps — Academic Compliant Cloud Project
 
 Full-stack cloud-native deployment meeting academic requirements:
-**Java Spring Boot + Angular + Kubernetes (EKS) + Elasticsearch + Kibana + GitHub Actions CI/CD**
+**Java Spring Boot + Angular + Kubernetes (EKS) + Elasticsearch + Kibana + AWS Lambda + GitHub Actions CI/CD**
 
 ---
 
@@ -13,7 +13,39 @@ Full-stack cloud-native deployment meeting academic requirements:
 | **Backend API (Spring Boot)** | http://a7d1837a5e5b64a2a8b1af2c8061f58c-1613418956.us-east-1.elb.amazonaws.com |
 | **Backend /hello** | http://a7d1837a5e5b64a2a8b1af2c8061f58c-1613418956.us-east-1.elb.amazonaws.com/hello |
 | **Kibana** | http://a559a8fcbad304edba1b6a467118b587-708286872.us-east-1.elb.amazonaws.com:5601 |
+| **Lambda (serverless)** | https://q9gzox7h34.execute-api.us-east-1.amazonaws.com/prod/ |
 | **GitHub Repository** | https://github.com/ZAZA-del/zahir-devops |
+
+---
+
+## Verification Steps
+
+Run these to confirm end-to-end:
+
+```bash
+# 1. Backend root
+curl http://a7d1837a5e5b64a2a8b1af2c8061f58c-1613418956.us-east-1.elb.amazonaws.com/
+# → "Backend is running"
+
+# 2. Backend /hello
+curl http://a7d1837a5e5b64a2a8b1af2c8061f58c-1613418956.us-east-1.elb.amazonaws.com/hello
+# → "Hello World"
+
+# 3. Frontend serves Angular (no-cache index.html)
+curl -I http://a6399fc5dbe4b477f95cba91561a8ee4-486874822.us-east-1.elb.amazonaws.com/
+# → Cache-Control: no-cache, no-store, must-revalidate
+
+# 4. Frontend → Backend proxy (nginx → Spring Boot)
+curl http://a6399fc5dbe4b477f95cba91561a8ee4-486874822.us-east-1.elb.amazonaws.com/api/hello
+# → "Hello World"
+
+# 5. Serverless Lambda (calls backend internally)
+curl https://q9gzox7h34.execute-api.us-east-1.amazonaws.com/prod/
+# → {"source":"AWS Lambda (serverless)","backend_response":"Hello World","message":"Lambda → Spring Boot: Hello World"}
+
+# 6. Kibana
+curl -s http://a559a8fcbad304edba1b6a467118b587-708286872.us-east-1.elb.amazonaws.com:5601/api/status | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['name'])"
+```
 
 ---
 
@@ -35,12 +67,13 @@ Internet ──────►│  │ AWS ELB    │────►│   EKS Cl
                 │  │(3 LBs)     │     │   (Kubernetes 1.30)    │  │
                 │  └────────────┘     │                        │  │
                 │                     │  Namespace: zahir       │  │
-                │                     │                        │  │
-                │                     │  ┌──────────────────┐  │  │
-                │                     │  │ zahir-backend     │  │  │
-                │                     │  │ Spring Boot 3.5   │  │  │
-                │                     │  │ 2 replicas        │  │  │
-                │                     │  └──────────────────┘  │  │
+                │  ┌──────────────┐   │                        │  │
+                │  │ API Gateway  │   │  ┌──────────────────┐  │  │
+                │  │ + Lambda     │   │  │ zahir-backend     │  │  │
+                │  │ (serverless) │   │  │ Spring Boot 3.5   │  │  │
+                │  └──────┬───────┘   │  │ 2 replicas        │  │  │
+                │         │           │  └──────────────────┘  │  │
+                │         └───────────┼──► /hello              │  │
                 │                     │                        │  │
                 │                     │  ┌──────────────────┐  │  │
                 │                     │  │ zahir-frontend    │  │  │
@@ -59,10 +92,10 @@ Internet ──────►│  │ AWS ELB    │────►│   EKS Cl
                 │                     │  └──────────────────┘  │  │
                 │                     │                        │  │
                 │                     │  ┌──────────────────┐  │  │
-                │                     │  │ filebeat          │  │  │
-                │  ECR                │  │ DaemonSet (2)     │  │  │
-                │  zahir-backend      │  │ → Elasticsearch  │  │  │
-                │  zahir-frontend     │  └──────────────────┘  │  │
+                │  ECR                │  │ filebeat          │  │  │
+                │  zahir-backend      │  │ DaemonSet (2)     │  │  │
+                │  zahir-frontend     │  │ → Elasticsearch  │  │  │
+                │                     │  └──────────────────┘  │  │
                 │                     └────────────────────────┘  │
                 └──────────────────────────────────────────────────┘
 ```
@@ -75,9 +108,10 @@ Internet ──────►│  │ AWS ELB    │────►│   EKS Cl
 |-------------|---------------|
 | Backend | Java Spring Boot 3.5 (Java 21) |
 | Frontend | Angular 21 |
-| Kubernetes | AWS EKS 1.30 (Fargate removed) |
+| Kubernetes | AWS EKS 1.30 (2× t3.medium) |
 | Logging | Elasticsearch 8.13 + Kibana 8.13 |
 | Log shipping | Filebeat DaemonSet |
+| Serverless | AWS Lambda + API Gateway |
 | Container Registry | AWS ECR |
 | CI/CD | GitHub Actions |
 
@@ -88,11 +122,28 @@ Internet ──────►│  │ AWS ELB    │────►│   EKS Cl
 Spring Boot app with these endpoints:
 
 ```
-GET /hello       → "Hello World"
-GET /health      → {"status":"UP"}
-GET /api/info    → JSON stack info
-GET /actuator/*  → Spring Actuator endpoints
+GET /         → "Backend is running"
+GET /hello    → "Hello World"
+GET /health   → {"status":"UP"}
+GET /api/info → JSON stack info
+GET /actuator/* → Spring Actuator endpoints
 ```
+
+---
+
+## Serverless Component
+
+An AWS Lambda function (`zahir-hello-proxy`) is deployed behind API Gateway:
+
+- **Trigger**: HTTP GET via API Gateway
+- **Runtime**: Python 3.13
+- **Function**: Calls the Spring Boot backend `/hello` endpoint
+- **URL**: `https://q9gzox7h34.execute-api.us-east-1.amazonaws.com/prod/`
+- **Response**: `{"source": "AWS Lambda (serverless)", "backend_response": "Hello World", "message": "Lambda → Spring Boot: Hello World"}`
+
+This demonstrates the serverless→container integration: public request → API Gateway → Lambda → EKS Spring Boot.
+
+Source code: [`lambda/hello_proxy.py`](./lambda/hello_proxy.py)
 
 ---
 
@@ -216,6 +267,7 @@ Access Kibana at: http://a559a8fcbad304edba1b6a467118b587-708286872.us-east-1.el
 | ECR Backend | `zahir-backend` | Spring Boot image |
 | ECR Frontend | `zahir-frontend` | Angular/nginx image |
 | k8s Namespace | `zahir` | All workloads |
+| Lambda | `zahir-hello-proxy` | Python 3.13, API Gateway |
 
 ---
 
@@ -224,5 +276,6 @@ Access Kibana at: http://a559a8fcbad304edba1b6a467118b587-708286872.us-east-1.el
 See [`/deliverables/`](./deliverables/) for:
 - `screenshots/k8s-pods-services.txt` — kubectl output of all pods/services
 - `screenshots/backend-endpoint.txt` — backend API responses
-- `screenshots/frontend-status.txt` — frontend HTTP status
+- `screenshots/frontend-status.txt` — frontend HTTP status + cache headers
 - `screenshots/kibana-status.txt` — Kibana status and log count
+- `screenshots/lambda-endpoint.txt` — Lambda serverless endpoint response
