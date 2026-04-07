@@ -13,10 +13,10 @@ resource "aws_eks_cluster" "main" {
 
   vpc_config {
     subnet_ids = [
-      "subnet-0af9da2aa1bda019d",
-      "subnet-09316561ce8129bce",
-      "subnet-04947bfff2536a195",
-      "subnet-00e80835781aa3152",
+      aws_subnet.public_1b.id,
+      aws_subnet.public_1f.id,
+      aws_subnet.private_1b.id,
+      aws_subnet.private_1f.id,
     ]
     # cluster_security_group_id is read-only — EKS manages it automatically
   }
@@ -44,8 +44,8 @@ resource "aws_eks_node_group" "main" {
   ami_type        = "AL2023_x86_64_STANDARD"
 
   subnet_ids = [
-    data.aws_subnet.node_1.id,
-    data.aws_subnet.node_2.id,
+    aws_subnet.public_1b.id,
+    aws_subnet.public_1f.id,
   ]
 
   instance_types = [var.node_instance_type]

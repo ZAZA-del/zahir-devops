@@ -258,6 +258,7 @@ Terraform is the source of truth for all AWS infrastructure.
 
 | Resource | Terraform file |
 |----------|----------------|
+| VPC, subnets, IGW, NAT, route tables | `infra/terraform/vpc.tf` |
 | EKS cluster (`zahir-cluster`) | `infra/terraform/eks.tf` |
 | EKS node group (`zahir-nodes`, 2× t3.medium) | `infra/terraform/eks.tf` |
 | IAM roles (EKS cluster, node group, Lambda) | `infra/terraform/iam.tf` |
@@ -346,6 +347,23 @@ terraform import aws_api_gateway_method.root_get       q9gzox7h34/0gz3qjpy1c/GET
 terraform import aws_api_gateway_integration.root_get  q9gzox7h34/0gz3qjpy1c/GET
 terraform import aws_api_gateway_deployment.main       q9gzox7h34/dkyaab
 terraform import aws_api_gateway_stage.prod            q9gzox7h34/prod
+
+# VPC + Networking (previously eksctl-managed, now Terraform-managed)
+terraform import aws_vpc.main                           vpc-04031749c8b836ba7
+terraform import aws_subnet.public_1b                   subnet-0af9da2aa1bda019d
+terraform import aws_subnet.public_1f                   subnet-09316561ce8129bce
+terraform import aws_subnet.private_1b                  subnet-04947bfff2536a195
+terraform import aws_subnet.private_1f                  subnet-00e80835781aa3152
+terraform import aws_internet_gateway.main              igw-0ce7bccf64c353e2a
+terraform import aws_eip.nat                            eipalloc-069f3df9eff06a346
+terraform import aws_nat_gateway.main                   nat-0e79d8e0ecd6ebdc9
+terraform import aws_route_table.public                 rtb-0da2b5691e7d8fe06
+terraform import aws_route_table.private_1b             rtb-028238e18dc158ba4
+terraform import aws_route_table.private_1f             rtb-0672ea0641c3ad2ee
+terraform import aws_route_table_association.public_1b  subnet-0af9da2aa1bda019d/rtb-0da2b5691e7d8fe06
+terraform import aws_route_table_association.public_1f  subnet-09316561ce8129bce/rtb-0da2b5691e7d8fe06
+terraform import aws_route_table_association.private_1b subnet-04947bfff2536a195/rtb-028238e18dc158ba4
+terraform import aws_route_table_association.private_1f subnet-00e80835781aa3152/rtb-0672ea0641c3ad2ee
 ```
 
 After all imports, run `terraform plan` — it should show **no changes** or only
@@ -394,7 +412,6 @@ gh run watch --repo ZAZA-del/zahir-devops
 - API Gateway + stage
 
 It does **not** remove:
-- The eksctl-created VPC (referenced via `data` source, not managed by Terraform)
 - The S3 bucket and DynamoDB table used for Terraform state (bootstrap resources)
 - Kubernetes workload YAMLs in `k8s/` (these are redeployable via kubectl)
 
