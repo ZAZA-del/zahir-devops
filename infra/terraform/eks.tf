@@ -76,5 +76,9 @@ resource "aws_eks_node_group" "main" {
     aws_iam_role_policy_attachment.eks_worker_node,
     aws_iam_role_policy_attachment.eks_cni,
     aws_iam_role_policy_attachment.eks_ecr_readonly,
+    # cluster_shared SG is attached to node ENIs via eksctl launch template.
+    # This dependency ensures Terraform destroys the node group BEFORE the SG,
+    # giving ENIs time to detach and preventing DependencyViolation on destroy.
+    aws_security_group.cluster_shared,
   ]
 }

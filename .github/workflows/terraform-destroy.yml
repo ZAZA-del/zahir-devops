@@ -50,56 +50,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # ── Step 1: Drain Kubernetes LoadBalancer services ──────────────────────
-      # The k8s cloud-controller-manager creates AWS security groups and ELBs
-      # for LoadBalancer services. These are NOT in Terraform state, so
-      # terraform destroy won't remove them — leaving them in the VPC blocks
-      # VPC deletion. Deleting the namespace first lets the cloud-controller
-      # clean them up properly.
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v3
-        with:
-          version: "latest"
-
-      - name: Configure kubectl
-        run: |
-          aws eks update-kubeconfig \
-            --region ${{ env.AWS_REGION }} \
-            --name ${{ env.CLUSTER_NAME }}
-
-      - name: Delete Kubernetes namespace (removes LoadBalancer services + ELBs)
-        run: |
-          kubectl delete namespace ${{ env.K8S_NAMESPACE }} --ignore-not-found --wait=true --timeout=120s || true
-          echo "Namespace deleted (or was already gone)."
-
-      - name: Wait for AWS to clean up ELB security groups
-        run: |
-          echo "Waiting for ELB-managed security groups to be removed by AWS..."
-          VPC_ID=$(aws eks describe-cluster \
-            --name ${{ env.CLUSTER_NAME }} \
-            --query 'cluster.resourcesVpcConfig.vpcId' \
-            --output text 2>/dev/null || echo "")
-
-          if [ -z "$VPC_ID" ]; then
-            echo "Cluster not found — skipping SG wait."
-          else
-            # Poll until no k8s-elb SGs remain (max 3 minutes)
-            for i in $(seq 1 18); do
-              ELB_SGS=$(aws ec2 describe-security-groups \
-                --filters "Name=vpc-id,Values=${VPC_ID}" \
-                          "Name=group-name,Values=k8s-elb-*" \
-                --query 'SecurityGroups[].GroupId' \
-                --output text)
-              if [ -z "$ELB_SGS" ]; then
-                echo "All ELB security groups cleaned up."
-                break
-              fi
-              echo "Still waiting for: ${ELB_SGS} (attempt ${i}/18)..."
-              sleep 10
-            done
-          fi
-
-      # ── Step 2: Terraform destroy ────────────────────────────────────────────
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -109,7 +59,114 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         run: terraform init -input=false
 
-      - name: Terraform Destroy
+      # ── Step 1: Drain Kubernetes LoadBalancer services ──────────────────────
+      # k8s cloud-controller creates ELBs + SGs for LoadBalancer services.
+      # These are NOT in Terraform state — they block VPC deletion.
+      # Deleting the namespace lets the cloud-controller clean them up.
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: "latest"
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.CLUSTER_NAME }} || true
+
+      - name: Delete Kubernetes namespace (removes LoadBalancer ELBs + SGs)
+        run: |
+          kubectl delete namespace ${{ env.K8S_NAMESPACE }} \
+            --ignore-not-found --wait=true --timeout=120s || true
+
+      - name: Wait for ELB security groups to be removed by AWS
+        run: |
+          VPC_ID=$(aws eks describe-cluster \
+            --name ${{ env.CLUSTER_NAME }} \
+            --query 'cluster.resourcesVpcConfig.vpcId' \
+            --output text 2>/dev/null || echo "")
+          if [ -z "$VPC_ID" ] || [ "$VPC_ID" = "None" ]; then
+            echo "No cluster found — skipping ELB SG wait."
+          else
+            echo "Waiting for k8s-elb-* SGs in $VPC_ID to disappear..."
+            for i in $(seq 1 18); do
+              ELB_SGS=$(aws ec2 describe-security-groups \
+                --filters "Name=vpc-id,Values=${VPC_ID}" \
+                          "Name=group-name,Values=k8s-elb-*" \
+                --query 'SecurityGroups[].GroupId' --output text)
+              [ -z "$ELB_SGS" ] && echo "ELB SGs gone." && break
+              echo "  attempt $i/18 — still waiting for: $ELB_SGS"
+              sleep 10
+            done
+          fi
+
+      # ── Step 2: Destroy node group first so ENIs detach before SG deletion ─
+      # The ClusterSharedNodeSG is referenced by node ENIs. Terraform's default
+      # parallel destroy can try to delete the SG before ENIs detach, causing a
+      # DependencyViolation. Destroying the node group first and waiting avoids this.
+      - name: Destroy EKS node group first (allows ENIs to detach)
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform destroy \
+            -target=aws_eks_node_group.main \
+            -auto-approve -input=false || true
+
+      - name: Wait for node ENIs to fully detach
+        run: |
+          echo "Waiting 60s for node ENIs to detach from security groups..."
+          sleep 60
+
+      # ── Step 3: Clear circular SG references before full destroy ────────────
+      # The cluster_shared SG and eks-cluster-sg have circular ingress rules
+      # (each references the other). AWS won't delete a SG that is referenced
+      # in another SG's rules — revoke these cross-references first.
+      - name: Revoke circular security group ingress rules
+        run: |
+          CLUSTER_SHARED_SG=$(aws ec2 describe-security-groups \
+            --filters "Name=tag:Name,Values=eksctl-zahir-cluster-cluster/ClusterSharedNodeSecurityGroup" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo "")
+          EKS_CLUSTER_SG=$(aws ec2 describe-security-groups \
+            --filters "Name=tag:Name,Values=eks-cluster-sg-zahir-cluster-*" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo "")
+
+          echo "ClusterSharedSG: $CLUSTER_SHARED_SG  EksClusterSG: $EKS_CLUSTER_SG"
+
+          # Revoke all ingress rules on cluster_shared that reference other SGs
+          if [ -n "$CLUSTER_SHARED_SG" ] && [ "$CLUSTER_SHARED_SG" != "None" ]; then
+            RULES=$(aws ec2 describe-security-group-rules \
+              --filters "Name=group-id,Values=$CLUSTER_SHARED_SG" \
+              --query 'SecurityGroupRules[?!IsEgress && ReferencedGroupInfo!=null].SecurityGroupRuleId' \
+              --output text 2>/dev/null || echo "")
+            if [ -n "$RULES" ]; then
+              echo "Revoking ingress rules on $CLUSTER_SHARED_SG: $RULES"
+              aws ec2 revoke-security-group-ingress \
+                --group-id "$CLUSTER_SHARED_SG" \
+                --security-group-rule-ids $RULES \
+                --region ${{ env.AWS_REGION }} || true
+            fi
+          fi
+
+          # Revoke ingress on eks-cluster-sg that references cluster_shared
+          if [ -n "$EKS_CLUSTER_SG" ] && [ "$EKS_CLUSTER_SG" != "None" ] && \
+             [ -n "$CLUSTER_SHARED_SG" ] && [ "$CLUSTER_SHARED_SG" != "None" ]; then
+            RULES=$(aws ec2 describe-security-group-rules \
+              --filters "Name=group-id,Values=$EKS_CLUSTER_SG" \
+              --query "SecurityGroupRules[?!IsEgress && ReferencedGroupInfo.GroupId=='$CLUSTER_SHARED_SG'].SecurityGroupRuleId" \
+              --output text 2>/dev/null || echo "")
+            if [ -n "$RULES" ]; then
+              echo "Revoking cross-reference on $EKS_CLUSTER_SG: $RULES"
+              aws ec2 revoke-security-group-ingress \
+                --group-id "$EKS_CLUSTER_SG" \
+                --security-group-rule-ids $RULES \
+                --region ${{ env.AWS_REGION }} || true
+            fi
+          fi
+          echo "SG rule cleanup done."
+
+      # ── Step 4: Full destroy ─────────────────────────────────────────────────
+      - name: Terraform Destroy (full)
         working-directory: ${{ env.TF_DIR }}
         run: terraform destroy -auto-approve -input=false
 
