@@ -1,8 +1,13 @@
 import json
+import os
 import urllib.request
 import urllib.error
 
-BACKEND_URL = "http://a7d1837a5e5b64a2a8b1af2c8061f58c-1613418956.us-east-1.elb.amazonaws.com"
+# BACKEND_URL injected by Terraform via Lambda environment variable
+BACKEND_URL = os.environ.get(
+    "BACKEND_URL",
+    "http://a7d1837a5e5b64a2a8b1af2c8061f58c-1613418956.us-east-1.elb.amazonaws.com"
+)
 
 def handler(event, context):
     try:

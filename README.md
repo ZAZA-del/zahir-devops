@@ -1,7 +1,7 @@
 # Zahir DevOps — Academic Compliant Cloud Project
 
 Full-stack cloud-native deployment meeting academic requirements:
-**Java Spring Boot + Angular + Kubernetes (EKS) + Elasticsearch + Kibana + AWS Lambda + GitHub Actions CI/CD**
+**Java Spring Boot + Angular + Kubernetes (EKS) + Elasticsearch + Kibana + AWS Lambda + Terraform IaC + GitHub Actions CI/CD**
 
 ---
 
@@ -224,19 +224,179 @@ kubectl get all -n zahir
 
 ## CI/CD Pipeline
 
-On every push to `main`:
+### On pull request (plan only — no apply, no destroy)
 
 ```
-Test Backend      →  mvn verify (JUnit)
-Test Frontend     →  ng build --configuration production
-        ↓
-Build & Push      →  docker buildx --platform linux/amd64
-                     push zahir-backend:sha, zahir-frontend:sha to ECR
-        ↓
-Deploy to EKS     →  aws eks update-kubeconfig
-                     kubectl apply -f k8s/
-                     kubectl rollout status
+test-backend  ─┐
+               ├─► terraform-plan   (init → validate → plan → post to PR comment)
+test-frontend ─┘
 ```
+
+### On push to main (auto apply)
+
+```
+test-backend  ─┐
+               ├─► terraform-plan ──► terraform-apply   (apply -auto-approve)
+test-frontend ─┤
+               └─► build-and-push ──► deploy to EKS    (kubectl apply + rollout)
+```
+
+Terraform and the k8s deploy run in parallel after tests pass.
+Terraform manages infrastructure; kubectl manages workloads.
+
+### Pipeline file
+
+`.github/workflows/ci-cd.yml`
+
+---
+
+## Terraform Infrastructure
+
+Terraform is the source of truth for all AWS infrastructure.
+
+### What Terraform manages
+
+| Resource | Terraform file |
+|----------|----------------|
+| EKS cluster (`zahir-cluster`) | `infra/terraform/eks.tf` |
+| EKS node group (`zahir-nodes`, 2× t3.medium) | `infra/terraform/eks.tf` |
+| IAM roles (EKS cluster, node group, Lambda) | `infra/terraform/iam.tf` |
+| ECR repos (`zahir-backend`, `zahir-frontend`) | `infra/terraform/ecr.tf` |
+| Lambda function (`zahir-hello-proxy`) | `infra/terraform/lambda.tf` |
+| API Gateway (`zahir-lambda-api`) | `infra/terraform/apigateway.tf` |
+
+### Step 1 — Bootstrap remote state (one time only)
+
+Run this **once** before the first `terraform init`:
+
+```bash
+bash infra/bootstrap.sh
+```
+
+This creates:
+- S3 bucket `zahir-terraform-state-143575007958` (versioned, encrypted)
+- DynamoDB table `zahir-terraform-locks` (for state locking)
+
+### Step 2 — Import existing resources (one time only)
+
+Because all AWS resources were created manually before Terraform was added,
+run these imports **once** to bring them under Terraform management.
+
+```bash
+cd infra/terraform
+terraform init
+
+# IAM roles
+terraform import aws_iam_role.eks_cluster \
+  eksctl-zahir-cluster-cluster-ServiceRole-Ihp1DCeusPbU
+
+terraform import aws_iam_role.eks_node \
+  eksctl-zahir-cluster-nodegroup-zah-NodeInstanceRole-NILYKChlXvKS
+
+terraform import aws_iam_role.lambda zahir-lambda-role
+
+# IAM policy attachments
+terraform import \
+  aws_iam_role_policy_attachment.eks_cluster_policy \
+  "eksctl-zahir-cluster-cluster-ServiceRole-Ihp1DCeusPbU/arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+
+terraform import \
+  aws_iam_role_policy_attachment.eks_vpc_controller \
+  "eksctl-zahir-cluster-cluster-ServiceRole-Ihp1DCeusPbU/arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
+
+terraform import \
+  aws_iam_role_policy_attachment.eks_worker_node \
+  "eksctl-zahir-cluster-nodegroup-zah-NodeInstanceRole-NILYKChlXvKS/arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+
+terraform import \
+  aws_iam_role_policy_attachment.eks_cni \
+  "eksctl-zahir-cluster-nodegroup-zah-NodeInstanceRole-NILYKChlXvKS/arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+
+terraform import \
+  aws_iam_role_policy_attachment.eks_ecr_readonly \
+  "eksctl-zahir-cluster-nodegroup-zah-NodeInstanceRole-NILYKChlXvKS/arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+
+terraform import \
+  aws_iam_role_policy_attachment.eks_ecr_pull_only \
+  "eksctl-zahir-cluster-nodegroup-zah-NodeInstanceRole-NILYKChlXvKS/arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly"
+
+terraform import \
+  aws_iam_role_policy_attachment.eks_ssm \
+  "eksctl-zahir-cluster-nodegroup-zah-NodeInstanceRole-NILYKChlXvKS/arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+
+terraform import \
+  aws_iam_role_policy_attachment.lambda_basic \
+  "zahir-lambda-role/arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+
+# EKS cluster and node group
+terraform import aws_eks_cluster.main zahir-cluster
+terraform import aws_eks_node_group.main zahir-cluster:zahir-nodes
+
+# ECR repositories
+terraform import aws_ecr_repository.backend zahir-backend
+terraform import aws_ecr_repository.frontend zahir-frontend
+
+# Lambda
+terraform import aws_lambda_function.hello_proxy zahir-hello-proxy
+terraform import aws_lambda_permission.apigw zahir-hello-proxy/apigw-invoke
+
+# API Gateway
+terraform import aws_api_gateway_rest_api.main         q9gzox7h34
+terraform import aws_api_gateway_method.root_get       q9gzox7h34/0gz3qjpy1c/GET
+terraform import aws_api_gateway_integration.root_get  q9gzox7h34/0gz3qjpy1c/GET
+terraform import aws_api_gateway_deployment.main       q9gzox7h34/dkyaab
+terraform import aws_api_gateway_stage.prod            q9gzox7h34/prod
+```
+
+After all imports, run `terraform plan` — it should show **no changes** or only
+non-destructive diffs (e.g. `source_code_hash` for Lambda, which Terraform will update
+on next apply).
+
+### How apply works (automatic)
+
+Every push to `main` triggers:
+1. `terraform init` — initialises providers and S3 backend
+2. `terraform validate` — syntax check
+3. `terraform plan` — shows what would change
+4. `terraform apply -auto-approve` — applies changes without manual approval
+
+No human approval step. Changes to `.tf` files are applied automatically.
+
+### How destroy works — from GitHub UI
+
+1. Go to **Actions** → **Terraform Destroy**
+2. Click **Run workflow**
+3. In the `confirm` field type exactly: `DESTROY`
+4. Click **Run workflow**
+
+The workflow will abort if the input is anything other than `DESTROY`.
+
+### How destroy works — from GitHub CLI
+
+```bash
+gh workflow run terraform-destroy.yml \
+  --repo ZAZA-del/zahir-devops \
+  -f confirm=DESTROY
+```
+
+Watch the run:
+```bash
+gh run watch --repo ZAZA-del/zahir-devops
+```
+
+### Destroy scope
+
+`terraform destroy` removes:
+- EKS cluster + node group
+- IAM roles and policy attachments
+- ECR repositories (including all stored images — `force_delete = true`)
+- Lambda function
+- API Gateway + stage
+
+It does **not** remove:
+- The eksctl-created VPC (referenced via `data` source, not managed by Terraform)
+- The S3 bucket and DynamoDB table used for Terraform state (bootstrap resources)
+- Kubernetes workload YAMLs in `k8s/` (these are redeployable via kubectl)
 
 ---
 

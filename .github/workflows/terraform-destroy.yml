@@ -1,0 +1,72 @@
+name: Terraform Destroy
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MANUAL ONLY — never triggered automatically.
+#
+# Trigger from GitHub UI:
+#   Actions → Terraform Destroy → Run workflow → type DESTROY → Run
+#
+# Trigger from GitHub CLI:
+#   gh workflow run terraform-destroy.yml \
+#     -f confirm=DESTROY
+#
+# This destroys ALL Terraform-managed infrastructure:
+#   EKS cluster, node group, IAM roles, ECR repos (including images),
+#   Lambda, API Gateway.
+#
+# WARNING: This is irreversible. The Kubernetes workloads, ECR images,
+# and cluster will be permanently deleted.
+# ─────────────────────────────────────────────────────────────────────────────
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type DESTROY to confirm. Any other value aborts."
+        required: true
+        default: ""
+
+env:
+  AWS_REGION: us-east-1
+  TF_DIR: infra/terraform
+
+jobs:
+  destroy:
+    name: Terraform Destroy
+    runs-on: ubuntu-latest
+    # Guard: abort unless user explicitly typed DESTROY
+    if: github.event.inputs.confirm == 'DESTROY'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Confirm destruction
+        run: |
+          echo "⚠️  DESTROY confirmed. Proceeding with terraform destroy."
+          echo "Triggered by: ${{ github.actor }}"
+          echo "Ref: ${{ github.ref }}"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform Destroy
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform destroy -auto-approve -input=false
+
+      - name: Post-destroy summary
+        if: always()
+        run: |
+          echo "Destroy complete. All Terraform-managed resources have been removed."
+          echo "To rebuild: push to main branch — terraform apply runs automatically."
