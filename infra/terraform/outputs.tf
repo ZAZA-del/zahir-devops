@@ -35,15 +35,15 @@ output "api_gateway_url" {
 
 output "app_frontend_url" {
   description = "Frontend Angular app URL"
-  value       = var.frontend_lb_url != "" ? "http://${var.frontend_lb_url}" : "(not yet deployed)"
+  value       = var.frontend_lb_url != "" ? var.frontend_lb_url : "(not yet deployed)"
 }
 
 output "app_backend_url" {
   description = "Backend Spring Boot API URL"
-  value       = var.backend_lb_url != "" ? "http://${var.backend_lb_url}" : "(not yet deployed)"
+  value       = var.backend_lb_url != "" ? var.backend_lb_url : "(not yet deployed)"
 }
 
 output "app_kibana_url" {
   description = "Kibana dashboard URL"
-  value       = var.kibana_lb_url != "" ? "http://${var.kibana_lb_url}:5601" : "(not yet deployed)"
+  value       = var.kibana_lb_url != "" ? "${var.kibana_lb_url}:5601" : "(not yet deployed)"
 }

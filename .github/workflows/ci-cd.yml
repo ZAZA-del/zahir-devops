@@ -270,9 +270,9 @@ jobs:
           cd ${{ env.TF_DIR }}
           terraform init -input=false -reconfigure
           terraform apply -auto-approve -input=false \
-            -var="backend_lb_url=${BACKEND}" \
-            -var="frontend_lb_url=${FRONTEND}" \
-            -var="kibana_lb_url=${KIBANA}"
+            -var="backend_lb_url=http://${BACKEND}" \
+            -var="frontend_lb_url=http://${FRONTEND}" \
+            -var="kibana_lb_url=http://${KIBANA}"
 
       - name: Print app URLs
         run: |
