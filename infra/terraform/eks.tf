@@ -8,7 +8,8 @@ resource "aws_eks_cluster" "main" {
   role_arn = aws_iam_role.eks_cluster.arn
   version  = var.k8s_version
 
-  # eksctl sets this to false; must match to avoid forced cluster replacement
+  # false = EKS does NOT auto-install VPC CNI / kube-proxy / CoreDNS.
+  # We manage these explicitly via aws_eks_addon in addons.tf instead.
   bootstrap_self_managed_addons = false
 
   vpc_config {
